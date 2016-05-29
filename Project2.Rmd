@@ -5,8 +5,11 @@ output: html_document
 
 ```{r}
 library(ggplot2)
+library(caret)
 file <- "~/University/Semester 10/Data Science/Final Project/train.csv"
 train <- read.csv(file, encoding="UTF-8")
+
+train$TARGET = as.factor(train$TARGET)
 
 train$sum_USAGE = train$X206_USAGE + train$X207_USAGE + train$X208_USAGE + train$X209_USAGE + train$X210_USAGE
 
@@ -22,5 +25,37 @@ train_avg <- train[keep]
 
 keep <- c("weighted_avg_USAGE", "TARGET")
 train_w_avg <- train[keep]
+
+ file <- "~/University/Semester 10/Data Science/Final Project/test.csv"
+test <- read.csv(file, encoding="UTF-8")
+View(test)
+test$sum_USAGE = test$X206_USAGE + test$X207_USAGE + test$X208_USAGE + test$X209_USAGE + test$X210_USAGE
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+test$weighted_avg_USAGE =  apply(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), 1, function(d) weighted.mean(d, c(1,2,3,4,5), na.rm = TRUE))
+ 
+keep <- c("sum_USAGE")
+test_sum <- test[keep]
+keep <- c("avg_USAGE")
+test_avg <- test[keep]
+keep <- c("weighted_avg_USAGE")
+test_w_avg <- test[keep]
+
+sumFit <- train(TARGET ~ .,method="J48",data=train_sum)
+sumPrediction <- predict(sumFit,newdata=test_sum)
+
+avgFit <- train(TARGET ~ .,method="J48",data=train_avg)
+avgPrediction <- predict(avgFit,newdata=test_avg)
+
+weightedAvgFit <- train(TARGET ~ .,method="J48",data=train_w_avg)
+weightedAvgPrediction <- predict(weightedAvgFit, newdata=test_w_avg)
+
+
+keep <- c("sum_USAGE","avg_USAGE", "weighted_avg_USAGE", "TARGET")
+train_custom <- train[keep]
+keep <- c("sum_USAGE","avg_USAGE", "weighted_avg_USAGE")
+test_custom <- test[keep]
+customFit <- train(TARGET ~ .,method="J48",data=train_custom)
+customPrediction <- predict(customFit,newdata=test_custom)
+
 ```
 

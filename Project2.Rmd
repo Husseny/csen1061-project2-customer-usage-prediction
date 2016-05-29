@@ -4,7 +4,23 @@ output: html_document
 ---
 
 ```{r}
-train <- read.csv("~/University/Semester 10/Data Science/Final Project/train.csv", header=FALSE, row.names=1)
+library(ggplot2)
+file <- "~/University/Semester 10/Data Science/Final Project/train.csv"
+train <- read.csv(file, encoding="UTF-8")
 
+train$sum_USAGE = train$X206_USAGE + train$X207_USAGE + train$X208_USAGE + train$X209_USAGE + train$X210_USAGE
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$weighted_avg_USAGE =  apply(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), 1, function(d) weighted.mean(d, c(1,2,3,4,5), na.rm = TRUE))
+
+ keep <- c("sum_USAGE", "TARGET")
+train_sum <- train[keep]
+
+keep <- c("avg_USAGE", "TARGET")
+train_avg <- train[keep]
+
+keep <- c("weighted_avg_USAGE", "TARGET")
+train_w_avg <- train[keep]
 ```
 

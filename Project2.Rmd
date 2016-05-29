@@ -1,0 +1,10 @@
+---
+title: "Project 2"
+output: html_document
+---
+
+```{r}
+train <- read.csv("~/University/Semester 10/Data Science/Final Project/train.csv", header=FALSE, row.names=1)
+
+```
+

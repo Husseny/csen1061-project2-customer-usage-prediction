@@ -6,10 +6,22 @@ output: html_document
 ```{r}
 library(ggplot2)
 library(caret)
+library(plyr)
+library(dplyr)
 file <- "~/University/Semester 10/Data Science/Final Project/train.csv"
 train <- read.csv(file, encoding="UTF-8")
 
+ file <- "~/University/Semester 10/Data Science/Final Project/test.csv"
+test <- read.csv(file, encoding="UTF-8")
+
 train$TARGET = as.factor(train$TARGET)
+
+```
+
+#1 First Prediction
+```{r}
+# Features: "sum_USAGE","avg_USAGE", "weighted_avg_USAGE"
+# Weighted average usage is the weighted average for the 5 months usage with the higher weights given to the nearest months to the 6th month. The last month gets the highest weight: 5
 
 train$sum_USAGE = train$X206_USAGE + train$X207_USAGE + train$X208_USAGE + train$X209_USAGE + train$X210_USAGE
 
@@ -26,11 +38,10 @@ train_avg <- train[keep]
 keep <- c("weighted_avg_USAGE", "TARGET")
 train_w_avg <- train[keep]
 
- file <- "~/University/Semester 10/Data Science/Final Project/test.csv"
-test <- read.csv(file, encoding="UTF-8")
-View(test)
+
+
 test$sum_USAGE = test$X206_USAGE + test$X207_USAGE + test$X208_USAGE + test$X209_USAGE + test$X210_USAGE
-test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
 test$weighted_avg_USAGE =  apply(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), 1, function(d) weighted.mean(d, c(1,2,3,4,5), na.rm = TRUE))
  
 keep <- c("sum_USAGE")
@@ -57,5 +68,670 @@ test_custom <- test[keep]
 customFit <- train(TARGET ~ .,method="J48",data=train_custom)
 customPrediction <- predict(customFit,newdata=test_custom)
 
+customPredictionDF <- as.data.frame(test$CONTRACT_KEY , customPrediction)
+customPredictionDF$prediction <- customPrediction
+colnames(customPredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+
+setwd("~/Desktop/DataScience Project2/")
+write.csv(customPredictionDF, file = "earlyPredictions.csv", row.names=FALSE)
 ```
+
+
+# Data exploration of the effect of the number of cells used by an account on the TARGET, Partitioning Training Data and measuring the accuracy by constructing the prediction table 
+```{r}
+#Failed Trial because the number of used cells didn't show much correlation with the TARGET as seen in the plotted graph and the produced prediciton table 
+
+file <- "~/University/Semester 10/Data Science/Final Project/daily_aggregate.csv"
+daily_aggregate <- read.csv(file, encoding="UTF-8")
+file <- "~/University/Semester 10/Data Science/Final Project/calendar_ref.csv"
+calendar_ref <- read.csv(file, encoding="UTF-8")
+
+cells_quantitiy <- with(daily_aggregate, tapply(CELL_KEY, CONTRACT_KEY, FUN = function(x) length(unique(x))))
+
+cells_count<-adply(cells_quantitiy, c(1))
+colnames(cells_count) <- c("CONTRACT_KEY", "CELL_COUNT")
+
+cells_count_train <- merge(train, cells_count, by="CONTRACT_KEY")
+ 
+keep <- c("CONTRACT_KEY", "CELL_COUNT", "TARGET")
+cells_count_train <- cells_count_train[keep]
+ggplot(cells_count_train, aes(x=CONTRACT_KEY, y=CELL_COUNT, color=TARGET)) + geom_point()
+
+cells_count_train$TARGET = as.factor(cells_count_train$TARGET)
+
+inTrain <- createDataPartition(y=cells_count_train$TARGET,p=0.7, list=FALSE)
+cells_count_training_set <- cells_count_train[inTrain,]
+cells_count_testing_set <- cells_count_train[-inTrain,]
+cellsCountPrediction <- predict(cellsCountFit, cells_count_testing_set[,1:2])
+
+ cells_count_prediction_table <- table(cellsCountPrediction, cells_count_testing_set$TARGET)
+cells_count_prediction_table 
+
+```
+
+#2 Second Prediction
+```{r}
+# Features: "avg_USAGE", "fifthMonth_TARGET"
+# fifthMonth_Target indicates whether a customer exceeds their average usage over the first 4 months by 500 Mega Bytes in the fifth month.
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "TARGET")
+train_custom2 <- train[keep]
+custom2FinalFit <- train(TARGET ~ .,method="J48",data=train_custom2)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+keep <- c("avg_USAGE", "fifthMonth_TARGET")
+test_custom2 <-test[keep]
+
+custom2Prediction <- predict(custom2FinalFit,newdata=test_custom2)
+custom2PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom2PredictionDF$prediction <- custom2Prediction
+
+colnames(custom2PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom2PredictionDF, file = "custom2Predictions.csv", row.names=FALSE)
+
+```
+
+#3 Third Prediction
+```{r}
+
+# Features: "avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT"
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+train_custom3 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom3 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "TARGET")
+train_custom3 <- train_custom3[keep]
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT")
+test_custom3 <- test_custom3[keep]
+train_custom3[is.na(train_custom3)] <- "N/A"
+test_custom3[is.na(test_custom3)] <- "N/A"
+
+custom3Fit <- train(TARGET ~ .,method="J48",data=train_custom3)
+
+custom3Prediction <- predict(custom3Fit,newdata=test_custom3)
+custom3PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom3PredictionDF$prediction <- custom3Prediction
+
+colnames(custom3PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom3PredictionDF, file = "custom3Predictions.csv", row.names=FALSE)
+
+```
+
+#4 Fourth Prediction:
+```{r}
+# Features: "avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE"
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+train_custom4 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom4 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "TARGET")
+train_custom4 <- train_custom4[keep]
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE")
+test_custom4 <- test_custom4[keep]
+train_custom4[is.na(train_custom4)] <- "N/A"
+test_custom4[is.na(test_custom4)] <- "N/A"
+
+custom4Fit <- train(TARGET ~ .,method="lda",data=train_custom4)
+
+custom4Prediction <- predict(custom4Fit,newdata=test_custom4)
+custom4PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom4PredictionDF$prediction <- custom4Prediction
+
+colnames(custom4PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom4PredictionDF, file = "custom4Predictions.csv", row.names=FALSE)
+ 
+```
+
+# Data partioning, training and testing to measure accuracies of  different algorithms
+```{r}
+
+# Accuracy: lda= 0.8068, J48(C4.5 Trees)= 0.8099, C5.0TREE= 0.809599,  glm= 0.8
+#C4.5 Trees scored the highest accuracy.Thus, it is used in the fifth prediction
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+
+inTrain <- createDataPartition(y=train$TARGET,p=0.7, list=FALSE)
+train_4 <- train[inTrain,]
+test_4 <- train[-inTrain,]
+
+train_custom4 <- merge(train_4, contact_ref, by="CONTRACT_KEY")
+test_custom4 <- merge(test_4, contact_ref, by="CONTRACT_KEY")
+
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "TARGET")
+train_custom4 <- train_custom4[keep]
+test_custom4 <- test_custom4[keep]
+train_custom4[is.na(train_custom4)] <- "N/A"
+test_custom4[is.na(test_custom4)] <- "N/A"
+
+custom4Fit <- train(TARGET ~ .,method="J48",data=train_custom4)
+
+custom4Prediction <- predict(custom4Fit,newdata=test_custom4[,1:4])
+
+prediction_table4 <- table(custom4Prediction, test_custom4$TARGET)
+accuracy <- (prediction_table4[1]+prediction_table4[4])/(prediction_table4[1]+prediction_table4[2] + prediction_table4[3]+prediction_table4[4])
+
+```
+
+#5 Fifth Prediction:
+```{r}
+# Features: "avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE"
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+train_custom5 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom5 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "TARGET")
+train_custom5 <- train_custom5[keep]
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE")
+test_custom5 <- test_custom5[keep]
+train_custom5[is.na(train_custom5)] <- "N/A"
+test_custom5[is.na(test_custom5)] <- "N/A"
+
+custom5Fit <- train(TARGET ~ .,method="J48",data=train_custom5)
+
+custom5Prediction <- predict(custom5Fit,newdata=test_custom5)
+custom5PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom5PredictionDF$prediction <- custom5Prediction
+
+colnames(custom5PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom5PredictionDF, file = "custom5Predictions.csv", row.names=FALSE)
+
+```
+
+# Data partioning, training and testing to measure accuracies of  different algorithms with different set of features 
+```{r}
+
+# With features: "avg_USAGE", "weighted_avg_USAGE", "standard_diviation"
+# Accuracies are : J48=.80274, lda=.8015, C5.0TREE=0.8015
+
+# With features: "avg_USAGE", "weighted_avg_USAGE", "standard_diviation", "VALUE_SEGMENT", "AGE" 
+# Accuracies are: C5.0TREE=0.800495, lda =.80182, J48=0.799611
+
+# With features: "avg_USAGE", "weighted_avg_USAGE", "standard_diviation", "VALUE_SEGMENT"
+# Accuracies are: J48 =0.803279, lda=.8035
+
+# Accuracies didn't show much improvement to previous predictions so none of the above set of featueres was adopted
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+train$weighted_avg_USAGE =  apply(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), 1, function(d) weighted.mean(d, c(1,2,3,4,5), na.rm = TRUE))
+
+train$standard_diviation = sqrt(((train$X206_USAGE-train$avg_USAGE)^2 + (train$X207_USAGE-train$avg_USAGE)^2 + (train$X208_USAGE-train$avg_USAGE)^2 + (train$X209_USAGE-train$avg_USAGE)^2 + (train$X210_USAGE-train$avg_USAGE)^2)/5)
+
+inTrain <- createDataPartition(y=train$TARGET,p=0.7, list=FALSE)
+train_6 <- train[inTrain,]
+test_6 <- train[-inTrain,]
+
+train_custom6 <- merge(train_6, contact_ref, by="CONTRACT_KEY")
+test_custom6 <- merge(test_6, contact_ref, by="CONTRACT_KEY")
+
+keep <- c("avg_USAGE", "weighted_avg_USAGE", "standard_diviation", "VALUE_SEGMENT", "TARGET")
+train_custom6 <- train_custom6[keep]
+test_custom6 <- test_custom6[keep]
+train_custom6[is.na(train_custom6)] <- "N/A"
+test_custom6[is.na(test_custom6)] <- "N/A"
+
+custom6Fit <- train(TARGET ~ .,method="C5.0TREE",data=train_custom6)
+
+custom6Prediction <- predict(custom6Fit,newdata=test_custom6[,1:4])
+
+prediction_table6 <- table(custom6Prediction, test_custom6$TARGET)
+accuracy <- (prediction_table6[1]+prediction_table6[4])/(prediction_table6[1]+prediction_table6[2] + prediction_table6[3]+prediction_table6[4])
+
+```
+
+#6 Sixth Prediction:
+```{r}
+
+# Features: "avg_USAGE", "weighted_avg_USAGE", "standard_deviation", "VALUE_SEGMENT", "fifthMonth_TARGET"
+# Standard Deviation is the standard deviation of the usage across all months
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+train$weighted_avg_USAGE =  apply(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), 1, function(d) weighted.mean(d, c(1,2,3,4,5), na.rm = TRUE))
+
+train$standard_diviation = sqrt(((train$X206_USAGE-train$avg_USAGE)^2 + (train$X207_USAGE-train$avg_USAGE)^2 + (train$X208_USAGE-train$avg_USAGE)^2 + (train$X209_USAGE-train$avg_USAGE)^2 + (train$X210_USAGE-train$avg_USAGE)^2)/5)
+
+test$weighted_avg_USAGE =  apply(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), 1, function(d) weighted.mean(d, c(1,2,3,4,5), na.rm = TRUE))
+
+test$standard_diviation = sqrt(((test$X206_USAGE-test$avg_USAGE)^2 + (test$X207_USAGE-test$avg_USAGE)^2 + (test$X208_USAGE-test$avg_USAGE)^2 + (test$X209_USAGE-test$avg_USAGE)^2 + (test$X210_USAGE-test$avg_USAGE)^2)/5)
+
+train_custom6 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom6 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+keep <- c("avg_USAGE", "weighted_avg_USAGE", "standard_diviation", "VALUE_SEGMENT", "fifthMonth_TARGET", "TARGET")
+train_custom6 <- train_custom6[keep]
+keep <- c("avg_USAGE", "weighted_avg_USAGE", "standard_diviation", "VALUE_SEGMENT", "fifthMonth_TARGET")
+test_custom6 <- test_custom6[keep]
+train_custom6[is.na(train_custom6)] <- "N/A"
+test_custom6[is.na(test_custom6)] <- "N/A"
+
+custom6Fit <- train(TARGET ~ .,method="lda",data=train_custom6)
+
+custom6Prediction <- predict(custom6Fit,newdata=test_custom6)
+custom6PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom6PredictionDF$prediction <- custom6Prediction
+
+colnames(custom6PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom6PredictionDF, file = "secondcustom6Predictions.csv", row.names=FALSE)
+
+```
+
+#7 Seventh Prediction:
+```{r}
+
+#Features: "avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT"
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+train_custom7 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom7 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "TARGET")
+train_custom7 <- train_custom7[keep]
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT")
+test_custom7 <- test_custom7[keep]
+train_custom7[is.na(train_custom7)] <- "N/A"
+test_custom7[is.na(test_custom7)] <- "N/A"
+
+custom7Fit <- train(TARGET ~ .,method="lda",data=train_custom7)
+
+custom7Prediction <- predict(custom7Fit,newdata=test_custom7)
+custom7PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom7PredictionDF$prediction <- custom7Prediction
+
+colnames(custom7PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom7PredictionDF, file = "custom7Predictions.csv", row.names=FALSE)
+
+```
+
+# Data partioning, training and testing to measure accuracies of  different algorithms
+```{r}
+
+#Accuracy J48= 0.611, which is very low compared to the previous measured accuracies
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+file <- "~/University/Semester 10/Data Science/Final Project/roaming_monthly.csv"
+roaming_monthly <- read.csv(file, encoding="UTF-8")
+ keep <- c("CONTRACT_KEY", "USAGE")
+roaming_monthly_usage <- roaming_monthly[keep]
+roaming_monthly_usage <- ddply(roaming_monthly_usage, "CONTRACT_KEY", numcolwise(sum))
+
+train_roaming <- merge(train, roaming_monthly_usage, by="CONTRACT_KEY")
+ggplot(train_roaming, aes(x=CONTRACT_KEY, y=USAGE, color=TARGET)) + geom_point()
+
+inTrain <- createDataPartition(y=train_roaming$TARGET,p=0.7, list=FALSE)
+train_8 <- train_roaming[inTrain,]
+test_8 <- train_roaming[-inTrain,]
+
+keep <- c("avg_USAGE", "USAGE", "TARGET")
+train_custom8 <- train_8[keep]
+test_custom8 <- test_8[keep]
+
+custom8Fit <- train(TARGET ~ .,method="J48",data=train_custom8)
+
+custom8Prediction <- predict(custom8Fit,newdata=test_custom8[,1:2])
+
+prediction_table8 <- table(custom8Prediction, test_custom8$TARGET)
+accuracy <- (prediction_table8[1]+prediction_table8[4])/(prediction_table8[1]+prediction_table8[2] + prediction_table8[3]+prediction_table8[4])
+
+```
+
+#9 Ninth Prediction:
+```{r}
+
+# Features: "avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS"
+
+file <- "~/University/Semester 10/Data Science/Final Project/daily_aggregate.csv"
+daily_aggregate <- read.csv(file, encoding="UTF-8")
+
+keep <- c("CONTRACT_KEY", "NO_OF_SESSIONS")
+sessions_count <- daily_aggregate[keep]
+sessions_count <- ddply(sessions_count, "CONTRACT_KEY", numcolwise(sum))
+
+average_sessions_count <- mean(sessions_count$NO_OF_SESSIONS)
+
+train_custom9 <- left_join(train, sessions_count, by="CONTRACT_KEY")
+test_custom9 <- left_join(test, sessions_count, by="CONTRACT_KEY")
+train_custom9[is.na(train_custom9)] <- average_sessions_count
+test_custom9[is.na(test_custom9)] <- average_sessions_count
+
+ggplot(train_custom9, aes(x=CONTRACT_KEY, y=NO_OF_SESSIONS, color=TARGET)) + geom_point()
+
+train_custom9 <- merge(train_custom9, contact_ref, by="CONTRACT_KEY")
+test_custom9 <- merge(test_custom9, contact_ref, by="CONTRACT_KEY")
+
+
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "TARGET")
+train_custom9 <- train_custom9[keep]
+keep <- c("avg_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS")
+test_custom9 <- test_custom9[keep]
+train_custom9[is.na(train_custom9)] <- "N/A"
+test_custom9[is.na(test_custom9)] <- "N/A"
+
+custom9Fit <- train(TARGET ~ .,method="lda",data=train_custom9)
+
+custom9Prediction <- predict(custom9Fit,newdata=test_custom9)
+custom9PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom9PredictionDF$prediction <- custom9Prediction
+
+colnames(custom9PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom9PredictionDF, file = "custom9Predictions.csv", row.names=FALSE)
+
+
+```
+
+#10 Tenth Prediction:
+```{r}
+
+#10's features are the same as 9 Using the sessions count in the monthly aggregate adding the average number of sessions per account and the total usage over the 5 months
+
+train$avg_SESSIONS <- rowMeans(subset(train, select = c(X206_SESSION_COUNT, X207_SESSION_COUNT, X208_SESSION_COUNT, X209_SESSION_COUNT, X210_SESSION_COUNT)), na.rm = TRUE)
+
+test$avg_SESSIONS <- rowMeans(subset(test, select = c(X206_SESSION_COUNT, X207_SESSION_COUNT, X208_SESSION_COUNT, X209_SESSION_COUNT, X210_SESSION_COUNT)), na.rm = TRUE)
+
+train$NO_OF_SESSIONS <- train$X206_SESSION_COUNT + train$X207_SESSION_COUNT + train$X208_SESSION_COUNT + train$X209_SESSION_COUNT + train$X210_SESSION_COUNT
+
+train$TOTAL_USAGE <- train$X206_USAGE + train$X207_USAGE + train$X208_USAGE + train$X209_USAGE + train$X210_USAGE
+
+test$NO_OF_SESSIONS <- test$X206_SESSION_COUNT + test$X207_SESSION_COUNT + test$X208_SESSION_COUNT + test$X209_SESSION_COUNT + test$X210_SESSION_COUNT
+
+test$TOTAL_USAGE <- test$X206_USAGE + test$X207_USAGE + test$X208_USAGE + test$X209_USAGE + test$X210_USAGE
+
+
+ggplot(train, aes(x=CONTRACT_KEY, y=NO_OF_SESSIONS, color=TARGET)) + geom_point()
+
+train_custom10 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom10 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+
+keep <- c("avg_USAGE", "TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "avg_SESSIONS", "TARGET")
+train_custom10 <- train_custom10[keep]
+keep <- c("avg_USAGE", "TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "avg_SESSIONS")
+test_custom10 <- test_custom10[keep]
+train_custom10[is.na(train_custom10)] <- "N/A"
+test_custom10[is.na(test_custom10)] <- "N/A"
+
+custom10Fit <- train(TARGET ~ .,method="lda",data=train_custom10)
+
+custom10Prediction <- predict(custom10Fit,newdata=test_custom10)
+custom10PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom10PredictionDF$prediction <- custom10Prediction
+
+colnames(custom10PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom10PredictionDF, file = "custom10Predictions.csv", row.names=FALSE)
+
+```
+
+#11 Eleventh Prediction:
+```{r}
+# Features: "TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS"
+
+train$NO_OF_SESSIONS <- train$X206_SESSION_COUNT + train$X207_SESSION_COUNT + train$X208_SESSION_COUNT + train$X209_SESSION_COUNT + train$X210_SESSION_COUNT
+
+train$TOTAL_USAGE <- train$X206_USAGE + train$X207_USAGE + train$X208_USAGE + train$X209_USAGE + train$X210_USAGE
+
+test$NO_OF_SESSIONS <- test$X206_SESSION_COUNT + test$X207_SESSION_COUNT + test$X208_SESSION_COUNT + test$X209_SESSION_COUNT + test$X210_SESSION_COUNT
+
+test$TOTAL_USAGE <- test$X206_USAGE + test$X207_USAGE + test$X208_USAGE + test$X209_USAGE + test$X210_USAGE
+
+
+train_custom11 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom11 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+
+keep <- c("TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "TARGET")
+train_custom11 <- train_custom11[keep]
+keep <- c("TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS")
+test_custom11 <- test_custom11[keep]
+train_custom11[is.na(train_custom11)] <- "N/A"
+test_custom11[is.na(test_custom11)] <- "N/A"
+
+custom11Fit <- train(TARGET ~ .,method="lda",data=train_custom11)
+
+custom11Prediction <- predict(custom11Fit,newdata=test_custom11)
+custom11PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom11PredictionDF$prediction <- custom11Prediction
+
+colnames(custom11PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom11PredictionDF, file = "custom11Predictions.csv", row.names=FALSE)
+
+```
+
+#12 Twelfth Prediction
+```{r}
+# Features: "TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "GENDER"
+
+train$NO_OF_SESSIONS <- train$X206_SESSION_COUNT + train$X207_SESSION_COUNT + train$X208_SESSION_COUNT + train$X209_SESSION_COUNT + train$X210_SESSION_COUNT
+
+train$TOTAL_USAGE <- train$X206_USAGE + train$X207_USAGE + train$X208_USAGE + train$X209_USAGE + train$X210_USAGE
+
+test$NO_OF_SESSIONS <- test$X206_SESSION_COUNT + test$X207_SESSION_COUNT + test$X208_SESSION_COUNT + test$X209_SESSION_COUNT + test$X210_SESSION_COUNT
+
+test$TOTAL_USAGE <- test$X206_USAGE + test$X207_USAGE + test$X208_USAGE + test$X209_USAGE + test$X210_USAGE
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+train_custom12 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom12 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+
+keep <- c("TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "GENDER", "TARGET")
+train_custom12 <- train_custom12[keep]
+keep <- c("TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "GENDER")
+test_custom12 <- test_custom12[keep]
+train_custom12[is.na(train_custom12)] <- "N/A"
+test_custom12[is.na(test_custom12)] <- "N/A"
+
+custom12Fit <- train(TARGET ~ .,method="rf",data=train_custom12, tuneLength = 5,trControl = trainControl(method = "cv", indexOut = train))
+
+custom12Prediction <- predict(custom12Fit,newdata=test_custom12)
+custom12PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom12PredictionDF$prediction <- custom12Prediction
+
+colnames(custom12PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom12PredictionDF, file = "custom12Predictions.csv", row.names=FALSE)
+
+```
+
+#13 Thirteenth Prediction
+```{r}
+
+# Features: "X206_USAGE", "X207_USAGE", "X208_USAGE", "X209_USAGE", "X210_USAGE", "X206_SESSION_COUNT", "X207_SESSION_COUNT", "X208_SESSION_COUNT", "X209_SESSION_COUNT", "X210_SESSION_COUNT", "TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "GENDER"
+
+# Not submitted due to shortage in computing power
+
+train$NO_OF_SESSIONS <- train$X206_SESSION_COUNT + train$X207_SESSION_COUNT + train$X208_SESSION_COUNT + train$X209_SESSION_COUNT + train$X210_SESSION_COUNT
+
+train$TOTAL_USAGE <- train$X206_USAGE + train$X207_USAGE + train$X208_USAGE + train$X209_USAGE + train$X210_USAGE
+
+test$NO_OF_SESSIONS <- test$X206_SESSION_COUNT + test$X207_SESSION_COUNT + test$X208_SESSION_COUNT + test$X209_SESSION_COUNT + test$X210_SESSION_COUNT
+
+test$TOTAL_USAGE <- test$X206_USAGE + test$X207_USAGE + test$X208_USAGE + test$X209_USAGE + test$X210_USAGE
+
+train$avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+train$fourMonths_avg_USAGE = rowMeans(subset(train, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+train$fifthMonth_TARGET <- ifelse(train$X210_USAGE > train$fourMonths_avg_USAGE + 500, 1, 0)
+
+test$avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE, X210_USAGE)), na.rm = TRUE)
+
+test$fourMonths_avg_USAGE = rowMeans(subset(test, select = c(X206_USAGE, X207_USAGE, X208_USAGE, X209_USAGE)), na.rm = TRUE)
+
+test$fifthMonth_TARGET <- ifelse(test$X210_USAGE > test$fourMonths_avg_USAGE + 500, 1, 0)
+
+file <- "~/University/Semester 10/Data Science/Final Project/contract_ref.csv"
+contact_ref <- read.csv(file, encoding="UTF-8")
+
+train_custom13 <- merge(train, contact_ref, by="CONTRACT_KEY")
+test_custom13 <- merge(test, contact_ref, by="CONTRACT_KEY")
+
+
+keep <- c("X206_USAGE", "X207_USAGE", "X208_USAGE", "X209_USAGE", "X210_USAGE", "X206_SESSION_COUNT", "X207_SESSION_COUNT", "X208_SESSION_COUNT", "X209_SESSION_COUNT", "X210_SESSION_COUNT", "TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "GENDER", "TARGET")
+train_custom13 <- train_custom13[keep]
+
+keep <- c("X206_USAGE", "X207_USAGE", "X208_USAGE", "X209_USAGE", "X210_USAGE", "X206_SESSION_COUNT", "X207_SESSION_COUNT", "X208_SESSION_COUNT", "X209_SESSION_COUNT", "X210_SESSION_COUNT", "TOTAL_USAGE", "fifthMonth_TARGET", "VALUE_SEGMENT", "AGE", "NO_OF_SESSIONS", "GENDER")
+test_custom13 <- test_custom13[keep]
+
+train_custom13[is.na(train_custom13)] <- "N/A"
+test_custom13[is.na(test_custom13)] <- "N/A"
+
+custom13Fit <- train(TARGET ~ .,method="rf",data=train_custom13, tuneLength = 5,trControl = trainControl(method = "cv", indexOut = train))
+
+custom13Prediction <- predict(custom13Fit,newdata=test_custom13)
+custom13PredictionDF <- as.data.frame(test$CONTRACT_KEY)
+custom13PredictionDF$prediction <- custom13Prediction
+
+colnames(custom13PredictionDF) <- c("CONTRACT_KEY", "PREDICTED_TARGET")
+setwd("~/Desktop/DataScience Project2/")
+
+write.csv(custom13PredictionDF, file = "custom13Predictions.csv", row.names=FALSE)
+
+```
+
 
